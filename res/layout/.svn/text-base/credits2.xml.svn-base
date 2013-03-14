@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+	xmlns:android="http://schemas.android.com/apk/res/android"
+	android:id="@+id/LinearLayout01"
+	android:orientation="vertical"
+	android:layout_width="fill_parent"
+	android:layout_height="fill_parent"
+>
+
+	<TextView
+		android:id="@+id/TextView01"
+		android:textSize="20sp"
+		android:text="ZAFKATAPT would like to extend a very special thanks to:"
+		android:layout_height="wrap_content"
+		android:layout_width="fill_parent"
+		android:gravity="center" />
+	<TextView
+		android:id="@+id/TextView02"
+		android:textSize="32sp"
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:text="NOAH BELCHER"
+		android:gravity="center_horizontal" />
+	<TextView
+		android:id="@+id/TextView03"
+		android:textSize="18sp"
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:text="Android Programmer Extraordinaire"
+		android:gravity="center_horizontal" />
+	<Button
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:onClick="forward2"
+		android:text="Next" />
+
+
+</LinearLayout>

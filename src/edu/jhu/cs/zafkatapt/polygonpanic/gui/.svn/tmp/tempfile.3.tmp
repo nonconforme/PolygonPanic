@@ -1,0 +1,533 @@
+package edu.jhu.cs.zafkatapt.polygonpanic.gui;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
+
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.AI;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Base;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.GameState;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.PanicEvent;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.PanicInterface;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.PanicModelListener;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Parallelogram;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Pentagon;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Player;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Spell;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Square;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Star;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Trapezoid;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Triangle;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Unit;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Upgrades;
+import edu.jhu.cs.zafkatapt.polygonpanic.gameplay.Z;
+import edu.jhu.cs.zafkatapt.polygonpanic.gui.R;
+import android.app.Activity;
+import android.hardware.Sensor;
+import android.hardware.SensorManager;
+import android.os.Bundle;
+import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.View;
+import android.view.MenuItem;
+import android.view.SubMenu;
+
+/**
+ * The Class GameScreen. The screen where the game is actually played
+ */
+public class GameScreen extends Activity
+{
+	private PanicInterface model;
+	Timer update;
+
+	boolean casting = false;
+	long castTime;
+	final long CASTCAP = 4000;
+
+	private MenuItem quit;
+	private SubMenu units, spells, unitupgrades, /* spellupgrades, */
+	castleupgrades;
+
+	private MenuItem triangle, parallelogram, square, trapezoid, pentagon,
+			star, zunit;
+	private MenuItem earthquake, fling, horror;
+	private MenuItem triup, parup, squp, trapup, pentup, starup, zup;
+	// private MenuItem quakeup, flingup, horrorup;
+	private MenuItem health, energy, erate, grate;
+	private GameView gView;
+
+	private static int updateInterval = 100;
+	private static int sBootDelay = 0;
+
+	private boolean isAtt = false;
+
+	private SensorManager mSensorManager;
+	private long lastUpdate = -1;
+	private float x, y, z;
+	private float last_x, last_y, last_z;
+	private static final int SHAKE_THRESHOLD = 800;
+	private final long CASTCD = 2000;
+	private long countdown;
+
+	private int playerid;
+	private AI compplayer;
+
+	@Override
+	protected void onCreate(Bundle savedInstanceState)
+	{
+		System.out.println("TESTING 3 2 1");
+		super.onCreate(savedInstanceState);
+		
+		System.out.println("TESTING 3 2 1");
+		setContentView(R.layout.game);
+		
+
+		// Accelerometer Sensor
+		mSensorManager = (SensorManager)getSystemService(SENSOR_SERVICE);
+
+		Upgrades ups1 = new Upgrades();
+		Upgrades ups2 = new Upgrades();
+		Base base1 = new Base(1, ups1);
+		Base base2 = new Base(-1, ups2);
+		Player player1 = new Player(base1, ups1);
+		Player player2 = new Player(base2, ups2);
+		player1.addGold(100);
+		player2.addGold(100);
+		player1.setEnergy(0);
+		player2.setEnergy(0);
+
+		model = new GameState(player1, player2);
+
+		if(Lobby.networking==null)
+		{
+			playerid = 1;
+			// TODO Make an AI Player
+
+			compplayer = new AI(model);
+			System.gc();
+		}
+
+		else
+		{
+			if(Lobby.networking.isHost())
+				playerid = 1;
+			else
+				playerid = 2;
+		}
+
+		View t = this.findViewById(R.id.GameView);
+		if(t instanceof GameView)
+		{
+			gView = (GameView)t;
+		}
+		
+		gView.invalidate();
+		
+		System.out.println("TESTING 1 2 3");
+
+		this.model.addListener(new PanicModelListener()
+		{
+
+			@Override
+			public void receiveEvent(PanicEvent e)
+			{
+				if(e.isUnitDied())
+				{
+					// TODO
+					// Play death animation
+				}
+
+				if(e.isStartAttack())
+				{
+					// Start displaying health
+					gView.setFront(model.getFrontLineData());
+					isAtt = true;
+					gView.flipAttack();
+				}
+
+				if(e.isStopAttack())
+				{
+					// Stop Displaying health
+					isAtt = false;
+					gView.flipAttack();
+				}
+
+			}
+		});
+
+		update = new Timer();
+
+		update.scheduleAtFixedRate(new TimerTask()
+		{
+			public void run()
+			{
+				GameScreen.this.updateMethod();
+			}
+		}, sBootDelay, updateInterval);
+
+	}
+
+	private void updateMethod()
+	{
+		List<Unit> units;
+		units = model.update();
+		List<String> toDraw = new ArrayList<String>();
+		List<Double> locations = new ArrayList<Double>();
+
+		this.countdown -= System.currentTimeMillis();
+
+		if(this.countdown>=this.CASTCD)
+		{
+			gView.setHorror(false);
+			gView.setQuake(false);
+			gView.setWell(false);
+		}
+
+		if(this.isAtt)
+		{
+			gView.setFront(model.getFrontLineData());
+		}
+
+		for(Unit i : units)
+		{
+			// Draw the units
+			String u = "";
+			double loc = i.getPosition();
+
+			if(i instanceof Triangle)
+				u += "t";
+			else if(i instanceof Square)
+				u += "s";
+			else if(i instanceof Parallelogram)
+				u += "p";
+			else if(i instanceof Trapezoid)
+				u += "o";
+			else if(i instanceof Pentagon)
+				u += "f";
+			else if(i instanceof Star)
+				u += "r";
+			else if(i instanceof Z)
+				u += "z";
+
+			int r = i.getRank();
+			if(r<=2)
+				u += "r";
+			else if(r>=5)
+				u += "e";
+			else
+				u += "v";
+
+			int d = i.getDirection();
+			if(d>0)
+				u += "r";
+			else
+				u += "b";
+
+			toDraw.add(u);
+			locations.add(loc);
+		}
+
+		gView.setUnits(toDraw, locations);
+		gView.setResources(model.getPlayerGold(playerid),
+				model.getPlayerEnergy(playerid));
+
+		if(compplayer!=null)
+		{
+			compplayer.update();
+			System.gc();
+		}
+
+		else
+		{
+			// TODO ADD NETWORKING CODE
+			if(playerid==1)
+			{
+				Lobby.networking.setP1Units(model.getP1Units());
+				model.setP2Units(Lobby.networking.getP2Units());
+			}
+
+			else if(playerid==2)
+			{
+				Lobby.networking.setP2Units(model.getP2Units());
+				model.setP1Units(Lobby.networking.getP1Units());
+			}
+		}
+
+		gView.postInvalidate();
+	}
+
+	@Override
+	public boolean onCreateOptionsMenu(Menu menu)
+	{
+		units = menu.addSubMenu("Units");
+		spells = menu.addSubMenu("Spells");
+		unitupgrades = menu.addSubMenu("Unit Upgrades");
+		// spellupgrades = menu.addSubMenu("Spell Upgrades");
+		castleupgrades = menu.addSubMenu("Castle Upgrades");
+		quit = menu.add("Quit");
+
+		// Units
+		triangle = units.add("Triangle");
+		square = units.add("Square");
+		parallelogram = units.add("Parallelogram");
+		trapezoid = units.add("Trapezoid");
+		pentagon = units.add("Pentagon");
+		star = units.add("Star");
+		zunit = units.add("Z");
+
+		// Spells
+		earthquake = spells.add("Earthquake");
+		fling = spells.add("Fling");
+		horror = spells.add("Unspeakable Horror");
+
+		// Unit Upgrades
+		triup = unitupgrades.add("Triangle");
+		squp = unitupgrades.add("Square");
+		parup = unitupgrades.add("Parallelogram");
+		trapup = unitupgrades.add("Trapezoid");
+		pentup = unitupgrades.add("Pentagon");
+		starup = unitupgrades.add("Star");
+		zup = unitupgrades.add("Z");
+
+		// Spell Upgrades
+		// quakeup = spellupgrades.add("Earthquake");
+		// flingup = spellupgrades.add("Fling");
+		// horrorup = spellupgrades.add("Unspeakable Horror");
+
+		// Castle Upgrades
+		health = castleupgrades.add("Max Health");
+		castleupgrades.add("Attack Range");
+		castleupgrades.add("Attack Damage");
+		castleupgrades.add("Attack Speed");
+		energy = castleupgrades.add("Max Energy");
+		erate = castleupgrades.add("Energy Rate");
+		grate = castleupgrades.add("Gold Rate");
+
+		return true;
+	}
+
+	@Override
+	public boolean onOptionsItemSelected(MenuItem item)
+	{
+
+		// Menu Function
+		if(item.equals(quit))
+		{
+			finish();
+			return true;
+		}
+
+		// Unit Purchase Function
+		if(item.equals(triangle))
+		{
+			model.purchaseUnit(playerid, 1);
+
+			// TODO TEMP
+			model.purchaseUnit(2, 1);
+		}
+
+		else if(item.equals(square))
+		{
+			model.purchaseUnit(playerid, 2);
+		}
+
+		else if(item.equals(parallelogram))
+		{
+			model.purchaseUnit(playerid, 3);
+		}
+
+		else if(item.equals(trapezoid))
+		{
+			model.purchaseUnit(playerid, 4);
+		}
+
+		else if(item.equals(pentagon))
+		{
+			model.purchaseUnit(playerid, 5);
+		}
+
+		else if(item.equals(star))
+		{
+			model.purchaseUnit(playerid, 6);
+		}
+
+		else if(item.equals(zunit))
+		{
+			model.purchaseUnit(playerid, 7);
+		}
+
+		// Spells
+		else if(item.equals(earthquake))
+		{
+			// model.addspell
+		}
+
+		else if(item.equals(fling))
+		{
+			// model.addspell
+		}
+
+		else if(item.equals(horror))
+		{
+			// model.addspell
+		}
+
+		// Unit Upgrades
+		else if(item.equals(triup))
+		{
+			model.purchaseUnitUpgrade(playerid, 1);
+		}
+
+		else if(item.equals(squp))
+		{
+			model.purchaseUnitUpgrade(playerid, 2);
+		}
+
+		else if(item.equals(parup))
+		{
+			model.purchaseUnitUpgrade(playerid, 3);
+		}
+
+		else if(item.equals(trapup))
+		{
+			model.purchaseUnitUpgrade(playerid, 4);
+		}
+
+		else if(item.equals(pentup))
+		{
+			model.purchaseUnitUpgrade(playerid, 5);
+		}
+
+		else if(item.equals(starup))
+		{
+			model.purchaseUnitUpgrade(playerid, 6);
+		}
+
+		else if(item.equals(zup))
+		{
+			model.purchaseUnitUpgrade(playerid, 7);
+		}
+
+		/*
+		 * / Spell upgrades else if(item.equals(quakeup)) { //
+		 * model.spellupgrade }
+		 * 
+		 * else if(item.equals(flingup)) { // model.spellupgrade }
+		 * 
+		 * else if(item.equals(horrorup)) { // model.spellupgrade }
+		 */
+
+		// Base upgrades
+
+		// Base Health
+		else if(item.equals(health))
+		{
+			model.purchaseBaseUpgrade(playerid, 7);
+		}
+
+		// Energy Max
+		else if(item.equals(energy))
+		{
+			model.purchaseBaseUpgrade(playerid, 5);
+		}
+
+		// Energy Rate
+		else if(item.equals(erate))
+		{
+			model.purchaseBaseUpgrade(playerid, 4);
+		}
+
+		// Gold Rate
+		else if(item.equals(grate))
+		{
+			model.purchaseBaseUpgrade(playerid, 6);
+		}
+
+		return false;
+	}
+
+	public void onSensorChanged(int sensor, float[] values)
+	{
+		if(casting)
+		{
+			if(sensor==SensorManager.SENSOR_ACCELEROMETER)
+			{
+				long curTime = System.currentTimeMillis();
+				// only allow one update every 100ms.
+				if((curTime-lastUpdate)>=100)
+				{
+					float spin[] = new float[3];
+
+					// ADD UNSPEAKABLE HORROR CODE
+					spin = SensorManager.getOrientation(null, spin);
+					if(spin[0]<Math.PI/8.0||spin[0]<Math.PI*7.0/8.0)
+					{
+						// TODO UNSPEAKABLE HORROR
+						model.castSpell(playerid, Spell.HORROR);
+						this.countdown = this.CASTCD;
+						casting = false;
+						gView.setHorror(true);
+					}
+
+					// EARTHQUAKE
+					long diffTime = (curTime-lastUpdate);
+					lastUpdate = curTime;
+
+					x = values[SensorManager.DATA_X];
+					y = values[SensorManager.DATA_Y];
+					z = values[SensorManager.DATA_Z];
+
+					float speed = Math.abs(x+y+z-last_x-last_y-last_z)/diffTime
+							*10000;
+					if(speed>=SHAKE_THRESHOLD)
+					{
+						// TODO SHAKE CODE
+						model.castSpell(playerid, Spell.QUAKE);
+						this.countdown = this.CASTCD;
+						casting = false;
+						gView.setQuake(true);
+					}
+					last_x = x;
+					last_y = y;
+					last_z = z;
+
+					// Gravity Code
+					if(curTime-this.castTime>this.CASTCAP)
+					{
+						// TODO GRAVITY WELL
+						model.castSpell(playerid, Spell.GRAV_WELL);
+						this.countdown = System.currentTimeMillis();
+						casting = false;
+						gView.setWell(true);
+					}
+				}
+			}
+		}
+	}
+
+	@Override
+	public boolean onKeyDown(int keyCode, KeyEvent event)
+	{
+		if(keyCode==KeyEvent.KEYCODE_SEARCH)
+		{
+			this.casting = true;
+			this.castTime = System.currentTimeMillis();
+			return true;
+		}
+		if(keyCode==KeyEvent.KEYCODE_HOME)
+		{
+			finish();
+			return super.onKeyDown(keyCode, event);
+		}
+		else
+			return super.onKeyDown(keyCode, event);
+	}
+
+	public void back(View view)
+	{
+		finish();
+	}
+
+}

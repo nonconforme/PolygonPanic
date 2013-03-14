@@ -1,0 +1,680 @@
+package edu.jhu.cs.zafkatapt.polygonpanic.gameplay;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
+import java.util.Set;
+
+/**
+ * The Model class.
+ *
+ */
+public class GameState implements PanicInterface
+{
+	private final double ATTACK_RANGE = Math.PI * 5;
+	
+	private final int P1_BASE_LOCATION = 0, P2_BASE_LOCATION = 200;
+	
+	private final long SPELL_CAST_TIME = 2000;
+	
+	private long lastUpdateTime, lastGravWell, lastHorror, lastQuake;
+	
+	private boolean isAttackOccurring = false;
+	
+	private List<Player> players = new ArrayList<Player>(2);
+	
+	private List<List<Unit>> units = new ArrayList<List<Unit>>(2);
+	
+	private List<Queue<Unit>> frontLines = new ArrayList<Queue<Unit>>(2);
+	
+	private List<Double> unitDeathLocations = new LinkedList<Double>();
+	
+	private Set<PanicModelListener> panicModelListeners = new HashSet<PanicModelListener>();
+	
+	/**
+	 * The constructor.
+	 * @param player1 Player 1, the player on the left
+	 * @param player2 Player 2, the player on the right
+	 */
+	public GameState(Player player1, Player player2)
+	{
+		players.add(player1);
+		players.add(player2);
+		
+		units.add(new ArrayList<Unit>());
+		units.add(new ArrayList<Unit>());
+		
+		frontLines.add(new LinkedList<Unit>());
+		frontLines.add(new LinkedList<Unit>());
+	}
+	
+	/**
+	 * Begins the simulation process.
+	 */
+	public void start()
+	{
+		long time = System.currentTimeMillis();
+		
+		lastUpdateTime = time;
+		lastGravWell = time;
+		lastHorror = time;
+		lastQuake = time;
+	}
+	
+	/*
+	 * Updates the state of the game
+	 * @return List<Unit> a list of the units in the game
+	 */
+	public List<Unit> update()
+	{
+		long time = System.currentTimeMillis();
+		
+		if ((time - lastSpellTime()) < SPELL_CAST_TIME)
+		{
+			List<Unit> returnList = new ArrayList<Unit>(units.get(0).size() + units.get(1).size());
+			returnList.addAll(units.get(0));
+			returnList.addAll(units.get(1));
+			
+			return returnList;
+		}
+		
+		long delta = time - lastUpdateTime;
+		
+		int player = 0, enemy = 1;
+		
+		for (int i = 0; i < 2; i++)
+		{
+			for (int j = 0; j < units.get(i).size(); j++)
+			{
+				Unit unit = units.get(i).get(j);
+				
+				//is the unit attacking
+				if (unit.isAttacking())
+				{
+					//is the unit in range of the enemy base and the enemy has no units
+					if (units.get(enemy).isEmpty() && isUnitInBaseAttackRange(unit, 0))
+					{
+						unit.attack(players.get(enemy).getMyBase(), delta);
+						
+						if (players.get(enemy).getMyBase().getCurrHealth() <= 0)
+						{
+							fireEvent(new PanicEvent(false, false, false, player + 1));
+						}
+						
+						continue;
+					}
+					
+					//is the unit in range of the enemy's front line
+					if (!units.get(enemy).isEmpty() && isUnitInFrontLineAttackRange(unit, 0))
+					{
+						unit.attack(frontLines.get(enemy).peek(), delta);
+						
+						if (!isAttackOccurring)
+						{
+							isAttackOccurring = true;
+							
+							fireEvent(new PanicEvent(false, true, false, 0));
+						}
+						
+						if (!frontLines.get(enemy).peek().isAlive)
+						{	
+							if (frontLines.get(enemy).size() == 1 && !isUnitInBaseAttackRange(unit, 0))
+								unit.setAttacking(false);
+						}
+						
+						continue;
+					}
+					
+					unit.setAttacking(false);
+				}
+				
+				//unit is not attacking
+				
+				//is unit in attack range of enemy player's front line
+				if (isUnitInFrontLineAttackRange(unit, delta))
+				{
+					if (player == 0)
+						unit.setPosition(frontLines.get(enemy).peek().getPosition() - ATTACK_RANGE);
+					else
+						unit.setPosition(frontLines.get(enemy).peek().getPosition() + ATTACK_RANGE);
+					
+					unit.setAttacking(true);
+					
+					if (!isAttackOccurring)
+					{
+						fireEvent(new PanicEvent(false, true, false, 0));
+						
+						isAttackOccurring = true;
+					}
+				}
+				
+				//is unit in attack range of enemy player's base
+				else if (isUnitInBaseAttackRange(unit, delta))
+				{
+					if (player == 0)
+						unit.setPosition(P2_BASE_LOCATION - ATTACK_RANGE);
+					else
+						unit.setPosition(P1_BASE_LOCATION + ATTACK_RANGE);
+					
+					unit.setAttacking(true);
+					
+					if (!isAttackOccurring)
+					{
+						fireEvent(new PanicEvent(false, true, false, 0));
+						
+						isAttackOccurring = true;
+					}
+				}
+				
+				//unit will move normally
+				else
+					unit.move(delta);
+				
+				if (frontLines.size() > 0 && !frontLines.get(player).contains(unit)
+						&& unit.getPosition() == frontLines.get(player).peek().getPosition())
+				{
+					frontLines.get(player).add(unit);
+				}
+				
+				//front line queue will be cleared and unit will be added
+				else if ((player == 0 && unit.getPosition() > frontLines.get(player).peek().getPosition())
+							|| (player == 1 && unit.getPosition() < frontLines.get(player).peek().getPosition()))
+				{
+					frontLines.get(player).clear();
+					frontLines.get(player).add(unit);
+				}
+			}
+			
+			player++;
+			enemy--;
+		}
+		
+		players.get(0).getMyBase().generateEnergy(delta);
+		players.get(1).getMyBase().generateEnergy(delta);
+		
+		lastUpdateTime = time;
+		
+		return combineUnits();
+	}
+	
+	/**
+	 * Get the specified player's gold
+	 * @param player the player
+	 * @return the player's gold
+	 */
+	public int getPlayerGold(int player)
+	{	
+		return players.get(--player).getGold();
+	}
+	
+	/**
+	 * Get the specified player's energy
+	 * @param player the player
+	 * @return the player's energy
+	 */
+	public double getPlayerEnergy(int player)
+	{
+		return players.get(--player).getMyBase().getEnergy();
+	}
+	
+	@Override
+	public List<Double> getUnitDeathLocatons()
+	{
+		List<Double> returnArray = new LinkedList<Double>();
+		
+		for (Double location : unitDeathLocations)
+			returnArray.add(location);
+		
+		unitDeathLocations.clear();
+		
+		return returnArray;
+	}
+	
+	
+
+	@Override
+	public void addListener(PanicModelListener listener)
+	{
+		panicModelListeners.add(listener);
+	}
+	
+	@Override
+	public void removeListener(PanicModelListener listener)
+	{
+		panicModelListeners.remove(listener);
+	}
+
+	@Override
+	public boolean castSpell(int player, Spell spell)
+	{
+		if (player != 1 && player != 2)
+			return false;
+		
+		if (spell == Spell.GRAV_WELL)
+		{
+			return castGravWell(player);
+		}
+		
+		if (spell == Spell.HORROR)
+		{
+			return castHorror(player);
+		}
+		
+		if (spell == Spell.QUAKE)
+		{
+			return castQuake(player);
+		}
+		
+		return false;
+	}
+	
+	
+	@Override
+	public boolean purchaseUnit(int player, int unitID)
+	{
+		if ((player != 1 && player != 2) || !Unit.isValidUnitID(unitID))
+			return false;
+		
+		player--;
+		
+		if (players.get(player).getMyBase().spendEnergy(Unit.COST[unitID]))
+		{
+			int rank = players.get(player).getUnitUpgrades().getUpgrade(unitID);
+			int direction = (player == 0) ? 1 : -1;
+			
+			Unit unit = UnitFactory.createUnit(unitID, rank, direction);
+			units.get(player).add(unit);
+			
+			if (frontLines.get(player).isEmpty() || 
+					frontLines.get(player).peek().getPosition() == unit.getPosition())
+				frontLines.get(player).add(unit);
+			
+			return true;
+		}
+		
+		return false;
+	}
+	
+	@Override
+	public boolean purchaseUnitUpgrade(int player, int unitID)
+	{
+		if (player != 1 && player != 2)
+			return false;
+		
+		player--;
+		
+		if (players.get(player).upgradeUnit(unitID))
+			return true;
+		
+		return false;
+	}
+
+	@Override
+	public boolean purchaseBaseUpgrade(int player, int upgrade)
+	{
+		if ((player != 1 && player != 2))
+			return false;
+		
+		player--;
+		
+		if (players.get(player).upgradeBase(upgrade))
+			return true;
+		
+		return false;
+	}
+
+	@Override
+	public double[] getFrontLineData()
+	{
+		double[] data = new double[4];
+		
+		if (frontLines.get(0).isEmpty())
+		{
+			data[0] = -1;
+			data[1] = players.get(0).getMyBase().getCurrHealth();
+		}
+		else
+		{
+			data[0] = frontLines.get(0).peek().getPosition();
+			data[1] = frontLines.get(0).peek().getCurrHealth();
+		}
+		
+		if (frontLines.get(1).isEmpty())
+		{
+			data[2] = -1;
+			data[3] = players.get(1).getMyBase().getCurrHealth();
+		}
+		else
+		{
+			data[2] = frontLines.get(1).peek().getPosition();
+			data[3] = frontLines.get(1).peek().getCurrHealth();
+		}
+		
+		return data;
+	}
+	
+	@Override
+	public ArrayList<Unit> getP1Units()
+	{
+		return (ArrayList<Unit>)(units.get(0));
+	}
+	
+	@Override
+	public ArrayList<Unit> getP2Units()
+	{
+		return (ArrayList<Unit>)(units.get(1));
+	}
+	
+	@Override
+	public void setP1Units(ArrayList<Unit> p1Units)
+	{
+		units.set(0, p1Units);
+	}
+	
+	@Override
+	public void setP2Units(ArrayList<Unit> p2Units)
+	{
+		units.set(1, p2Units);
+	}
+	
+	@Override
+	public LinkedList<Unit> getP1FrontLine()
+	{
+		return (LinkedList<Unit>)(frontLines.get(0));
+	}
+	
+	@Override
+	public LinkedList<Unit> getP2FrontLine()
+	{
+		return (LinkedList<Unit>)(frontLines.get(1));
+	}
+	
+	@Override
+	public void setP1FrontLine(LinkedList<Unit> p1FrontLine)
+	{
+		frontLines.set(0, p1FrontLine);
+	}
+	
+	@Override
+	public void setP2FrontLine(LinkedList<Unit> p2FrontLine)
+	{
+		frontLines.set(1, p2FrontLine);
+	}
+	
+	/**
+	 * Combines the units of each player and returns one list.
+	 * Removes units that have been killed, and fires the
+	 * appropriate event if no attacks are occurring.
+	 * @return List<Unit> all of the units in the game
+	 */
+	private List<Unit> combineUnits()
+	{
+		int size = 0;
+		boolean attacking = false;
+		
+		for (List<Unit> list : units)
+			size+= list.size();
+		
+		List<Unit> returnList = new ArrayList<Unit>(size);
+		
+		for (int i = 0; i < 2; i++)
+		{
+			for (int j = 0; j < units.get(i).size(); j++)
+			{
+				Unit unit = units.get(i).get(j);
+				
+				if (!unit.isAlive())
+				{
+					unitDeathLocations.add(unit.getPosition());
+					
+					players.get((i == 0) ? 1 : 0).addGold(unit.getGoldValue() 
+							* players.get((i == 0) ? 1 : 0).getMyBase().getGoldRate());
+					
+					frontLines.get(i).remove(unit);
+					units.get(i).remove(unit);
+					
+					if (frontLines.get(i).isEmpty())
+						updateFrontLine(i);
+					
+					fireEvent(new PanicEvent(true, false, false, 0));
+				}
+				else
+				{
+					returnList.add(unit);
+				
+					if (!attacking && unit.isAttacking())
+						attacking = true;
+				}
+			}
+		}
+		
+		if (isAttackOccurring && !attacking)
+		{
+			isAttackOccurring = false;
+			
+			fireEvent(new PanicEvent(false, false, true, 0));
+		}
+		
+		return returnList;
+	}
+	
+	/**
+	 * Updates the specified player's front line
+	 * @param player the player
+	 */
+	private void updateFrontLine(int player)
+	{
+		if (!units.get(player).isEmpty())
+		{
+			double value = ((player == 0) ? -1.0 : 201.0);
+			Set<Unit> unitsToAdd = new HashSet<Unit>(units.get(player).size());
+			
+			for (int i = 0; i < units.get(player).size(); i++)
+			{
+				Unit unit = units.get(player).get(i);
+				
+				if ((player == 0 && unit.getPosition() > value) 
+						|| (player == 1 && unit.getPosition() < value))
+				{
+					value = unit.getPosition();
+					unitsToAdd.clear();
+					unitsToAdd.add(unit);
+				}
+				
+				else if (unit.getPosition() == value)
+					unitsToAdd.add(unit);
+			}
+			
+			frontLines.get(player).addAll(unitsToAdd);
+		}
+	}
+	
+	/**
+	 * Checks if the sepcified unit is within attack range of the enemy's front line
+	 * @param unit the unit
+	 * @param delta the time since the last update (used to calculate move)
+	 * @return <code>true</code> if the unit is within attack range of the enemy's front line and <code>false</code> otherwise
+	 */
+	private boolean isUnitInFrontLineAttackRange(Unit unit, long delta)
+	{
+		if (unit.getDirection() == 1 && 
+				frontLines.get(1).peek() != null && 
+					unit.getMovementPosition(delta) >= (frontLines.get(1).peek().getPosition() - ATTACK_RANGE))
+		{
+			return true;
+		}
+		
+		if (unit.getDirection() == -1 && 
+				frontLines.get(0).peek() != null && 
+					unit.getMovementPosition(delta) <= (frontLines.get(0).peek().getPosition() + ATTACK_RANGE))
+		{
+			return true;
+		}
+		
+		return false;
+	}
+	
+	/**
+	 * Checks if the sepcified unit is within attack range of the enemy's base
+	 * @param unit the unit
+	 * @param delta the time since the last update (used to calculate move)
+	 * @return <code>true</code> if the unit is within attack range of the enemy's base and <code>false</code> otherwise
+	 */
+	private boolean isUnitInBaseAttackRange(Unit unit, long delta)
+	{
+		if (unit.getDirection() == 1 && 
+				unit.getMovementPosition(delta) >= P2_BASE_LOCATION - ATTACK_RANGE)
+		{
+			return true;
+		}
+		
+		if (unit.getDirection() == -1 && 
+				unit.getMovementPosition(delta) <= P1_BASE_LOCATION + ATTACK_RANGE)
+		{
+			return true;
+		}
+		
+		return false;
+	}
+	
+	/**
+	 * Fires an event to all of the listeners
+	 * @param event the event
+	 */
+	private void fireEvent(PanicEvent event)
+	{
+		for (PanicModelListener listener : panicModelListeners)
+		{
+			listener.receiveEvent(event);
+		}
+	}
+	
+	/**
+	 * Casts a gravity well
+	 * @param player the player casting
+	 * @return <code>true</code> if the cast was successful and <code>false</code> otherwise
+	 */
+	private boolean castGravWell(int player)
+	{
+		long time = System.currentTimeMillis();
+		
+		if ((time - lastGravWell) >= Spell.getCoolDown(Spell.GRAV_WELL)
+				&& getPlayerEnergy(player) >= Spell.getEnergyCost(Spell.GRAV_WELL))
+		{
+			lastGravWell = time;
+			
+			players.get(player).getMyBase().spendEnergy(Spell.getEnergyCost(Spell.GRAV_WELL));
+			
+			if (player == 1)
+			{
+				for (Unit unit: units.get(0))
+				{
+					unit.setPosition(P2_BASE_LOCATION - ATTACK_RANGE);
+					
+					if (!frontLines.get(0).contains(unit))
+						frontLines.get(0).add(unit);
+				}
+				
+				for (Unit unit: units.get(1))
+				{
+					unit.setPosition(P2_BASE_LOCATION);
+					
+					if (!frontLines.get(1).contains(unit))
+						frontLines.get(1).add(unit);
+				}
+			}
+			else
+			{
+				for (Unit unit: units.get(0))
+				{
+					unit.setPosition(P1_BASE_LOCATION);
+					
+					if (!frontLines.get(0).contains(unit))
+						frontLines.get(0).add(unit);
+				}
+				
+				for (Unit unit: units.get(1))
+				{
+					unit.setPosition(P1_BASE_LOCATION + ATTACK_RANGE);
+					
+					if (!frontLines.get(1).contains(unit))
+						frontLines.get(1).add(unit);
+				}
+			}
+			
+			return true;
+		}
+		
+		return false;
+	}
+	
+	/**
+	 * Casts an unspeakable horror
+	 * @param player the player casting
+	 * @return <code>true</code> if the cast was successful and <code>false</code> otherwise
+	 */
+	private boolean castHorror(int player)
+	{
+		long time = System.currentTimeMillis();
+		
+		if ((time - lastHorror) >= Spell.getCoolDown(Spell.HORROR)
+				&& getPlayerEnergy(player) >= Spell.getEnergyCost(Spell.HORROR))
+		{
+			lastHorror = time;
+			
+			players.get(player - 1).getMyBase().spendEnergy(Spell.getEnergyCost(Spell.HORROR));
+			
+			for (int i = 0; i < 2; i++)
+			{
+				frontLines.get(i).clear();
+				units.get(i).clear();
+			}
+			
+			return true;
+		}
+		
+		return false;
+	}
+	
+	/**
+	 * Casts an earthquake
+	 * @param player the player casting
+	 * @return <code>true</code> if the cast was successful and <code>false</code> otherwise
+	 */
+	private boolean castQuake(int player)
+	{
+		long time = System.currentTimeMillis();
+		
+		if ((time - lastQuake) >= Spell.getCoolDown(Spell.QUAKE)
+				&& getPlayerEnergy(player) >= Spell.getEnergyCost(Spell.QUAKE))
+		{
+			lastQuake = time;
+			
+			players.get(player - 1).getMyBase().spendEnergy(Spell.getEnergyCost(Spell.QUAKE));
+			
+			for (int i = 0; i < 2; i++)
+			{
+				for (Unit unit: units.get(i))
+				{
+					unit.setCurrHealth(unit.getCurrHealth() * .75);
+				}
+			}
+			
+			return true;
+		}
+		
+		return false;
+	}
+	
+	/**
+	 * Returns the time of the last spell cast
+	 * @return the time of the last spell cast
+	 */
+	private long lastSpellTime()
+	{
+		return Math.max(lastGravWell, Math.max(lastHorror, lastQuake));
+	}
+
+}

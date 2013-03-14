@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+	xmlns:android="http://schemas.android.com/apk/res/android"
+	android:orientation="vertical"
+	android:layout_width="fill_parent"
+	android:layout_height="fill_parent"
+	android:keepScreenOn="true">
+	
+	<Button
+		android:id="@+id/SinglePlayer"
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:text="Single Player"
+		android:onClick="singlePlayer" />
+	<Button
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:onClick="multiPlay"
+		android:text="Multiplayer" />
+	<!-- Non Functioning as of yet. To be implemented in the future
+	<Button
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:text="High Score"
+		android:onClick="highScore" />
+	<Button
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:onClick="multiRec"
+		android:text="Multiplayer Record" />-->
+		
+	<Button
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:onClick="credits"
+		android:text="Credits" />
+</LinearLayout>

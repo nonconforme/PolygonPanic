@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+	xmlns:android="http://schemas.android.com/apk/res/android"
+	android:id="@+id/LinearLayout01"
+	android:orientation="vertical"
+	android:layout_width="fill_parent"
+	android:layout_height="fill_parent"
+>
+
+	<TextView
+		android:id="@+id/TextView01"
+		android:textSize="26sp"
+		android:text="ZAFKATAPT would also like to thank:"
+		android:layout_height="wrap_content"
+		android:layout_width="fill_parent"
+		android:gravity="center" />
+	<LinearLayout
+		xmlns:android="http://schemas.android.com/apk/res/android"
+		android:id="@+id/LinearLayout02"
+		android:orientation="horizontal"
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content">
+		<TextView
+			android:id="@+id/TextView02"
+			android:textSize="20sp"
+			android:layout_width="wrap_content"
+			android:layout_height="fill_parent"
+			android:text="Manik Bhat\nSeth Gerson\nMike Latham\nZach Palmer\nScott Smith"
+			android:gravity="center_horizontal" />
+		<TextView
+			android:id="@+id/TextView03"
+			android:textSize="20sp"
+			android:layout_width="fill_parent"
+			android:layout_height="fill_parent"
+			android:text="Uday Bhaskar\nTian Han\nSolomon Liu\nJohn Schwam\nSharon Sun"
+			android:gravity="center_horizontal" />
+	</LinearLayout>
+	<Button
+		android:layout_width="fill_parent"
+		android:layout_height="wrap_content"
+		android:onClick="back"
+		android:text="Back" />
+
+
+</LinearLayout>
